@@ -1,0 +1,127 @@
+#################
+##R Environment##
+#################      
+Sys.setenv(BEARER_TOKEN = 
+             "AAAAAAAAAAAAAAAAAAAAAA0IYwEAAAAA59YYFaUNEiGx9iUbhAG%2FY%2FY%2Byp0%3D1Y3siHnHXCseUuKnAheOjifcBPskzwETs1juDCtpPXinTTeZZs")
+
+#################
+##Load Packages##
+#################
+library(httr)
+library(jsonlite)
+library(academictwitteR)
+library(purrr)
+library(stringr)
+library(lubridate)
+library(tidyverse)
+
+#################
+##Set Token######
+#################
+bearer_token <- "AAAAAAAAAAAAAAAAAAAAAA0IYwEAAAAA59YYFaUNEiGx9iUbhAG%2FY%2FY%2Byp0%3D1Y3siHnHXCseUuKnAheOjifcBPskzwETs1juDCtpPXinTTeZZs"
+
+#* academictwitteR vignette: https://cran.r-project.org/web/packages/academictwitteR/vignettes/academictwitteR-intro.html 
+#* academictwitteR CRAN info: https://cran.r-project.org/web/packages/academictwitteR/academictwitteR.pdf
+#* Info about the fields or variables in the scraped data (data dictionary): https://developer.twitter.com/en/docs/twitter-api/data-dictionary/object-model/tweet 
+
+#####################################
+## Scrape Twitter - Defund Emergence##
+#####################################
+#Scrape Twitter for mentions of #DefundPolice #DefundThePolice "defund police" from 2013-2019, and then Jan-June 2020. 
+#Note that this will catch tweets that have both "defund" and "police" though not as an exact phrase.
+
+early_defund_tweets <-
+  get_all_tweets(
+    query = c("#DefundPolice", "#DefundThePolice", "defund police"),
+    start_tweets = "2013-01-01T00:00:00Z",
+    end_tweets = "2019-12-31T00:00:00Z",
+    bearer_token,
+    data_path = "data-earlydefund/",
+    bind_tweets = FALSE,
+    n= 1000000,
+    is_retweet = FALSE #exclude retweets
+  )
+
+earlydefund_df <- bind_tweets(data_path = "data-earlydefund/")
+#glimpse(earlydefund_df)
+#sample <- earlydefund_df %>% slice_head(., n=100)
+
+defund1319_flat <- jsonlite::flatten(earlydefund_df) #flatten dataframes
+
+#how to flatten columns that are lists? 
+#for now, lets just remove the list columns
+defund1319_nolist <- defund1319_flat %>% 
+  select_if(~!is.list(.)) %>%
+  mutate(date = as_date(created_at)) %>%
+  arrange(ymd(date))
+#glimpse(earlydefund_nolist)
+
+#save
+#as R object
+save(earlydefund_df, file="data/defundtweets1319_df.Rda")
+save(defund1319_nolist, file="data/defundtweets1319_flat_df.Rda")
+#write to csv
+write.csv(defund1319_nolist, file="data/defundtweets1319_df.csv", row.names = F, quote=F)
+
+ 
+defund2020_tweets <-
+  get_all_tweets(
+    query = c("#DefundPolice", "#DefundThePolice", "defund police"),
+    start_tweets = "2019-12-31T00:00:00Z",
+    end_tweets = "2020-07-01T00:00:00Z",
+    bearer_token,
+    data_path = "data-defund2020/",
+    bind_tweets = FALSE,
+    n= 1000000,
+    is_retweet = FALSE #exclude retweets
+  )
+
+defund2020_df <- bind_tweets(data_path = "data-defund2020/")
+#glimpse(earlydefund_df)
+
+defund2020_nolist <- jsonlite::flatten(defund2020_df) %>% #flatten dataframes
+#how to flatten columns that are lists? 
+#for now, lets just remove the list columns
+  select_if(~!is.list(.)) %>%
+  mutate(date = as_date(created_at)) %>%
+  arrange(ymd(date)) %>%
+  select(., -c(withheld.copyright, withheld.scope))
+
+#Bind together all defund tweets
+defund1320_nolist <- bind_rows(defund1319_nolist, defund2020_nolist)
+
+#save as R objects
+save(defund2020_df, file="data/defundtweets2020_df.Rda")
+save(defund2020_nolist, file="data/defundtweets2020_nolist_df.Rda")
+save(defund1320_nolist, file="data/defundtweets1320_nolist_df.Rda")
+
+defund2020_tweets <-
+  get_all_tweets(
+    query = c("#DefundPolice", "#DefundThePolice", "defund police"),
+    start_tweets = "2019-12-31T00:00:00Z",
+    end_tweets = "2020-07-01T00:00:00Z",
+    bearer_token,
+    data_path = "data-defund2020/",
+    bind_tweets = FALSE,
+    n= 1000000,
+    is_retweet = FALSE #exclude retweets
+  )
+
+defund2020_df <- bind_tweets(data_path = "data-defund2020/")
+#glimpse(earlydefund_df)
+
+defund2020_nolist <- jsonlite::flatten(defund2020_df) %>% #flatten dataframes
+#how to flatten columns that are lists? 
+#for now, lets just remove the list columns
+  select_if(~!is.list(.)) %>%
+  mutate(date = as_date(created_at)) %>%
+  arrange(ymd(date)) %>%
+  select(., -c(withheld.copyright, withheld.scope))
+
+#Bind together all defund tweets
+defund1320_nolist <- bind_rows(defund1319_nolist, defund2020_nolist)
+
+#save as R objects
+save(defund2020_df, file="data/defundtweets2020_df.Rda")
+save(defund2020_nolist, file="data/defundtweets2020_nolist_df.Rda")
+save(defund1320_nolist, file="data/defundtweets1320_nolist_df.Rda")
