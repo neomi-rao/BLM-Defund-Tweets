@@ -1,0 +1,139 @@
+library(tm) # Framework for text mining
+library(tidyverse) # Data preparation and pipes %>%
+library(ggplot2) # For plotting word frequencies
+library(wordcloud) # Wordclouds!
+library(tidytext) #to help with managing large DTMs
+library(stm) #structural topic models
+
+#########################################
+## Finding the number of topics for STM
+# In order to choose how many topics the STM should account for, we will run a few diagnostic tests (Roberts et al. 2014).
+# A computationally expensive method is to run multiple models on the searchK() function which performs several automated tests including for exclusivity, semantic coherence, residual dispersion, and held out analysis. 
+# A good explainer about this: https://juliasilge.com/blog/evaluating-stm/
+# We will need to do the model pre-processing steps to run the evaluation, including redacting the search terms, removing stop words/numbers/case and stemming words. 
+
+### Early Defund STM
+#(this is to get rid of "defund" and "police" since we used these terms to find the tweets in the first place)
+# this redacted version will be our input for the STM 
+defund_may20_redact <- defund_may20_merge %>%
+  mutate(text = str_replace_all(text, "(?i)defund|polic[:alpha:]*", "_")) #case insensitive, replace w _
+
+#### Pre-processing
+defund_temp<-textProcessor(documents = defund_may20_redact$text, metadata = defund_may20_redact)
+defund_meta<-defund_temp$meta
+defund_vocab<-defund_temp$vocab
+defund_docs<-defund_temp$documents
+
+# Prep documents in the correct format
+# Drop words that appear in under 5 documents
+out <- prepDocuments(defund_docs, defund_vocab, defund_meta, lower.thresh = 5)
+
+defund_docs<-out$documents
+defund_vocab<-out$vocab
+out$meta$month <- as.numeric(out$meta$month) #convert month to numeric to allow for plotting later
+defund_meta <-out$meta
+
+storage <- searchK(out$documents, out$vocab, K = c(10, 15, 20, 25, 28, 30),
+                   prevalence =~ s(month), data = out$meta)
+storage
+
+### Another rudimentary method is to set K=0 and int.type="Spectral" which automatically selects a number of topics (Lee and Mimno 2014). Note that generally, it's a good idea to use the Spectral initialization because it returns the same result regardless of what seed is set. 
+
+require(geometry)
+require(Rtsne)
+require(rsvd)
+defund_model_x <- stm(defund_docs, defund_vocab, K=0, prevalence = ~ s(month), 
+                      data = defund_meta, seed = 123, init.type = "Spectral")
+
+#Since the model with 25 topics has the lowest residual dispersion and good values on the other metrics, we will use that number of topics. 
+
+
+#################################
+## STM - Tweets
+#We will run an STM for all defund tweets from 1/1/13 to 5/25/20 with 25 topics and Spectral initialization, regressing on month. 
+
+#run on 25 topics (K), no seed, Spectral init.type
+defund_model_25 <- stm(defund_docs, defund_vocab, K=25, prevalence = ~ s(month), 
+                       data = defund_meta, init.type = "Spectral")
+
+#save
+save(defund_model_25, file="data/defund_may2020_stm_25k.Rda") #converged after 14 its!!
+save(defund_meta, file="data/defundmeta.Rda")
+
+################################
+## Analysis
+#What are the top words for each of the topics in the general defund tweets dataset?
+###Top Words
+labelTopics(defund_model_25)
+
+#lets create hand labels for these topics
+#for 25 topics
+labels_defund25 <- c("More Money, Less Privatizing", "Defund Surrey PD", "Dismantle ICE(?)", "Press, Wikileaks, BYP(?)",
+  "BLM-Reframe Safety & Justice", "Op-Ed: Time for Defund", "Chi Traffic Blockade", 
+  "Clinton-BLM Conspiracy", "Tell Obama: Hit Police Pockets", "White-lash/NoCopAcademy (?)",
+  "Defund Fed Police $", "BYP: FundBlackFutures", "Reimagine Public Safety", "Police Reform Needed",
+  "Rand Paul pro-Defunding Militarization/anti-BYP (?)", "Fund Schools, Not PIC", "Pro-ICE, anti-Latinx",
+  "Petition: Defund, Dismantle", "Islam/Obama/Soros Conspiracy", "ColorofChange Petition", 
+  "Radical Left Action", "Chi BLM/BYP Protests", "Libertarian Anti-State, Right-Wing Anti-BLM", 
+  "Anti-Police + Pro-Police (?)", "Defund + Redirect, Anti-Dems (?)"
+
+
+#What are example Tweets for each Topic?
+## Example Docs
+# increase n to get more tweets (but increase by a lot because of duplicates)
+findThoughts(defund_model_25, texts = defund_meta$text, n=1,topics = 1:25)
+
+#get the tweets for the table later
+redacted_defund25_tweets <- 
+  findThoughts(defund_model_12, texts = defund_meta$text, n=1,topics = 1:25)$docs %>%
+  unlist()
+  
+#############################
+## Structural Topic Models - User Profiles for All Defund Tweets
+#We will use the user profile descriptions as input for pre-processing. Repeat user data is left in to show change over time.
+# Note that the text input includes proper nouns.
+
+users_temp<-textProcessor(documents = defund_merge$description, metadata = defund_merge)
+
+users_meta<-users_temp$meta
+users_vocab<-users_temp$vocab
+users_docs<-users_temp$documents
+
+# Prep documents in the correct format
+#lower.thresh = 10 # Drop words that don't appear in at least 5 documents
+out <- prepDocuments(users_docs, users_vocab, users_meta, lower.thresh = 5) 
+out$meta$month <- as.numeric(out$meta$month) #convert month to numeric to allow for plotting later
+
+users_docs<-out$documents
+users_vocab<-out$vocab
+users_meta <-out$meta
+
+#We will now estimate a topic model by regressing topical prevalence on month.
+
+#run on 20 topics (K)
+#set no seed, just spectral
+users_model_20 <- stm(users_docs, users_vocab, K=20, prevalence = ~ s(month), 
+                       data = users_meta, init.type = "Spectral")
+
+#save as R object
+save(users_model_20, file="data/stm_users_20.Rda")
+save(users_meta, file="data/usersmeta.Rda")
+
+
+#Lets check the stats for different numbers of topics in the user profile models
+#mean(exclusivity(users_model_10))
+#mean(exclusivity(users_model_20))
+#median(semanticCoherence(users_model_20, documents=users_docs))
+
+#Seems like 20 may be a good option- semantic coherence is much better.
+
+##########
+## Analysis
+#What are the most frequent words in the 10 types of user profiles?
+
+#Top Words
+labelTopics(users_model_20)
+
+#What are example user descriptions for each Topic?
+# Example Docs
+findThoughts(users_model_20, texts = users_meta$description, n=1,topics = 1:20)
