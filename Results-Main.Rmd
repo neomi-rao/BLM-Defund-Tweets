@@ -1,0 +1,448 @@
+---
+title: "Results-Main"
+author: "Neomi Rao"
+date: '2022-06-01'
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lubridate)
+library(jsonlite)
+library(knitr)
+library(kableExtra)
+library(ggrepel)
+library(stm)
+library(academictwitteR)
+library(broom)
+
+load(file="data/defundtweets1320_nolist_df.Rda")
+load(file="data/defund_may2020_stm_15k.Rda")
+load(file="data/mergeduser_defund_df.Rda") 
+load(file = "data/prep_may20_plots.Rda")
+```
+
+## Methods
+Total number of tweets, unique users in big dataset (through June 2020)
+```{r}
+#total number of tweets in big dataset
+nrow(defund1320_nolist)
+
+#number of unique users in big dataset
+length(unique(defund1320_nolist$author_id))
+```
+
+
+Small dataset: total number of tweets, unique users, and engagement levels by time period (2013-14, 2015-16, 2017-May 2020)
+Note - I'm using mean engagement rather than median or max because it seems most useful (also max doesn't map onto qualitative data after removing duplicate tweets)
+*NOTE : MAKE THIS PRETTY AND AUTOMATICALLY INTO A TABLE*
+```{r}
+defund13may20 <- defund1320_nolist %>%
+  filter(str_detect(text, "(?i)defund", )) %>%
+  filter(date <= as.Date("2020-05-25")) %>%
+  #filter(!str_detect(text, "^RT")) %>%
+  #distinct(conversation_id, .keep_all = T) %>%
+  mutate(engagement = public_metrics.retweet_count + public_metrics.reply_count + 
+                          public_metrics.like_count + public_metrics.quote_count)
+
+
+#2013-2014
+defund1314 <- defund13may20 %>% 
+    filter(date <= as.Date("2014-12-31")) 
+nrow(defund1314) #number of tweets
+length(unique(defund1314$author_id)) #number of unique users
+mean(defund1314$engagement) #mean engagement
+#max(defund1314$engagement) #max engagement
+#sd(defund1314$engagement)
+
+#2015-2016
+defund1516 <- defund13may20 %>% 
+    filter(date > as.Date("2014-12-31") & date <= as.Date("2016-12-31")) 
+nrow(defund1516) #number of tweets
+length(unique(defund1516$author_id)) #number of unique users
+mean(defund1516$engagement) #mean engagement
+#max(defund1516$engagement) #max engagement
+
+#2017-May2020
+defund17may20 <- defund13may20 %>% 
+    filter(date > as.Date("2016-12-31")) 
+nrow(defund17may20) #number of tweets
+length(unique(defund17may20$author_id)) #number of unique users
+mean(defund17may20$engagement) #mean engagement
+#max(defund17may20$engagement) #max engagement
+
+  #May2020-June2020
+  defundmayjun20 <- defund1320_nolist %>% 
+      filter(date > as.Date("2020-05-25") & date <= as.Date("2020-06-04")) %>%
+      mutate(engagement = public_metrics.retweet_count + public_metrics.reply_count + 
+                          public_metrics.like_count + public_metrics.quote_count)
+  nrow(defundmayjun20) #number of tweets
+  length(unique(defundmayjun20$author_id)) #number of unique users
+  mean(defundmayjun20$engagement) #mean engagement
+  #max(defund17may20$engagement) #max engagement
+
+```
+
+
+
+**Figure 1:** Frequency of tweets that contain both "defund" and "police" (or cognates) from January 2013 through June 2020
+```{r early_freq, echo=F}
+defundfreq_1320 <- defund1320_nolist %>%
+  filter(str_detect(text, "(?i)defund", )) %>%
+  ggplot(aes(x=date)) +   
+  stat_count(geom='line', aes(y=..count..)) +
+  labs(title = "A) Daily frequency of 'defund police' tweets\n(1/2013-6/2020)") +
+  xlab("Date") + ylab("Daily count of tweets") +
+  annotate(geom = "vline",
+             x = c(ymd("2020-05-25")),
+             xintercept = c(ymd("2020-05-25")),
+             linetype = c("dashed"),  colour = "red") +
+  annotate(geom = "text",
+             label = c("May 25, 2020"),
+             x = c(ymd("2020-05-05")), y = c(50000),
+             angle = 90, vjust = 0, hjust=0.5, colour = "red", size=5) +
+  theme_bw()+ 
+  theme(axis.text = element_text(size=16), axis.title = element_text(size=16), 
+           plot.title=element_text(size=20))
+
+ggsave(filename = "figures/defundfreq_2013-20.png", plot = defundfreq_1320)
+
+#which dates have the most tweets?
+#defund1320_nolist %>% count(date, sort = T) %>% slice_head(., n=10)
+
+# version with logged y axis
+defundfreq_1320_log <- defund1320_nolist %>%
+  filter(str_detect(text, "(?i)defund", )) %>%
+  group_by(date) %>%
+  summarise(frequency1=(n()+1)) 
+
+defundfreq_1320_log <-
+  ggplot(data=defundfreq_1320_log, aes(x=date, y=frequency1)) +  
+  geom_line() +
+  scale_y_log10() + #log scale y axis
+  labs(title = "Logged daily frequency of 'defund police' tweets\n(1/2013-6/2020)") +
+  xlab("Date") + ylab("Logged daily count of tweets") +
+  annotate(geom = "vline",
+             x = c(ymd("2020-05-25")),
+             xintercept = c(ymd("2020-05-25")),
+             linetype = c("dashed"),  colour = "red") +
+  annotate(geom = "text",
+             label = c("May 25, 2020"),
+             x = c(ymd("2020-05-05")), y = c(1000),
+             angle = 90, vjust = 0, hjust=0.5, colour = "red", size=5) +
+  theme_bw()+ 
+  theme(axis.text = element_text(size=16), axis.title = element_text(size=16), 
+           plot.title=element_text(size=20))
+  
+ggsave(filename = "figures/defundfreq_2013-20_log.png", plot = defundfreq_1320_log)
+
+```
+
+**Figure 2:** Frequency of tweets that contain both "defund" and "police" (or cognates) from January 2013 through May 2020
+```{r early_freq2, echo=F warning=F}
+defundfreq_13may20 <- defund1320_nolist %>%
+  filter(str_detect(text, "(?i)defund", )) %>%
+  filter(date <= as.Date("2020-05-25")) %>%
+  ggplot(aes(x=date)) +   
+  stat_count(geom='line', aes(y=..count..)) +
+  labs(title = "B) Daily frequency of 'defund police' tweets\n(1/1/2013-5/25/2020)") +
+  xlab("Date") + ylab("Daily count of tweets") +
+  annotate(geom = "vline",
+             x = c(ymd("2020-05-25")),
+             xintercept = c(ymd("2020-05-25")),
+             linetype = c("dashed"),  colour = "red") +
+  annotate(geom = "text",
+             label = c("May 25, 2020"),
+             x = c(ymd("2020-05-25")), y = c(1000),
+             angle = 90, vjust = 0, hjust=0.5, colour = "red", size=5) +
+  theme_bw()+
+  theme(axis.text = element_text(size=16), axis.title = element_text(size=16), 
+           plot.title=element_text(size=20))
+
+defundfreq_13may20
+
+ggsave(filename = "figures/defundfreq_2013-may20.png", plot = defundfreq_13may20)
+
+```
+
+
+## Results
+What is the expected proportion of each topic for defund Tweets prior to May 25, 2020? (FREX)
+```{r}
+# Corpus summary
+png(filename="figures/defund15_topicprop.png", width = 600, height = 500)
+plot.STM(defund_model_15, type="summary", 
+         #topics = c(1, 3, 5:15), 
+         n=5, labeltype = "frex",
+         main="Expected Proportions for 'Defund Police' Tweets \n(Top FREX Words for 15 Topics)")
+dev.off()
+
+```
+
+Graph of all 12 topics (excluding 2 & 4 & 15)
+```{r}
+#see excel file stmplot-xaxis-dates.xlsx for 
+png(filename="figures/defundtopics_all.png", width = 800, height = 800)
+#remove box around plot, make line weight thicker
+par(bty="n",lwd=2) 
+#plot!
+plot(prep_may20, "month", method = "continuous", topics = c(1, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14), 
+     model = defund_model_15, 
+     printlegend = F, xaxt="n", xlab = "Time (Jan 2013-May 2020)",
+     main = "'Defund Police' Tweets: Topic Proportions Over Time", 
+     cex.lab = 1.5, cex.axis = 1.2, cex.main = 2) #increase font sizes
+#custom axis
+axis(1, at = c(15706, 16071, 16436, 16801, 17167, 17532, 17897, 18262), 
+     labels = c("2013", "2014", "2015", "2016", "2017", "2018", "2019", "2020"),
+     cex.axis = 1.5)
+# Put dotted lines on the x axis at each election year.
+abline(v=c(15706, 16071, 16436, 16801, 17167, 17532, 17897, 18262),lty=2,lwd=1,col="grey45") 
+#custom legend
+legend("bottom",
+       legend=c("[1] Direct Actions to Defund/ Dismantle", "[3] Clinton Conspiracy + Blue Lives", 
+                "[5] Demand POTUS Demil/ Disarm/ Reform", "[6] Tell Obama: Hit Police Pockets", 
+                "[7] BYP100-FundBlackFutures", "[8] DOJ: Defund/ Disarm/ Abolish", 
+                "[9] No Federal $ for Militarization", "[10] Bitcoin Defunds Police State",
+                "[11] Right-wing Conspiracy", "[12] Anti-BLM/BYP", "[13] Police Violence Incidents", 
+                "[14] Reimagine Public Safety"), 
+      col=c("red", "orange", "#FFED3A", "#b9fb60", "#51FA3A", "#45FA6D", 
+            "#47FCCD", "#027FFF", "#2633FF", "#AF5EFF", "#FF54EE", "#FF639C"), 
+      lty=1.5, box.lty = 0, cex = 1.3, ncol=2)
+dev.off()
+```
+
+Select topics to graph for comparison
+```{r}
+png(filename="figures/defundtopics_ofinterest2.png", width = 800, height = 800)
+#remove box around plot, make line weight thicker
+par(bty="n",lwd=2) 
+plot(prep_may20, "month", method = "continuous", topics = c(1, 6, 7, 10, 11, 12, 14), 
+     model = defund_model_15, 
+     printlegend = F, xaxt="n", xlab = "Time (Jan 2013-May 2020)",
+     main = "'Defund Police' Tweets: Selected Topic Proportions Over Time", 
+     cex.lab = 1.5, cex.axis = 1.2, cex.main = 2) #increase font sizes
+#dotted lines for years
+abline(v=c(15706, 16071, 16436, 16801, 17167, 17532, 17897, 18262),lty=2,lwd=1,col="grey45")
+#custom axis
+axis(1, at = c(15706, 16071, 16436, 16801, 17167, 17532, 17897, 18262), 
+     labels = c("2013", "2014", "2015", "2016", "2017", "2018", "2019", "2020"),
+     cex.axis = 1.5)
+#custom legend
+legend("bottomright",
+       legend=c("[1] Direct Actions to Defund/ Dismantle",
+                "[6] Tell Obama: Hit Police Pockets", "[7] BYP100-FundBlackFutures", 
+                "[10] Bitcoin Defunds Police State", "[11] Right-wing Conspiracy",
+                "[12] Anti-BLM/BYP", "[14] Reimagine Public Safety"), 
+      col=c("red", "#FFDB00", "green", "aquamarine", "#279DFF", "blue", "magenta"), 
+      lty=1.5, box.lty = 0, cex = 1.4)
+dev.off()
+```
+
+
+
+### 2013-2014
+Graph of selected topics for 2013-2014
+```{r}
+png(filename="figures/defundtopics_2013-14.png", width = 800, height = 800)
+#remove box around plot, make line weight thicker
+par(bty="n",lwd=2) 
+
+#plot!
+plot(prep_may20, "month", method = "continuous", topics = c(1, 6, 7, 10, 11, 12, 14), 
+     model = defund_model_15, 
+     printlegend = F, xaxt="n", xlab = "Time (Jan 2013-Dec 2014)",
+     xlim = c(15706, 16435),
+     main = "'Defund Police' Tweets: Select Topic Proportions 2013-2014", 
+     cex.lab = 1.5, cex.axis = 1.2, cex.main = 2) #increase font sizes
+#custom axis
+axis(1, at = c(15706, 15887, 16071, 16252, 16405), #each +1 is +1 day
+     labels = c("Jan 2013", "July 2013", "Jan 2014", "July 2014", "Dec 2014"),
+     cex.axis = 1.5)
+# Put dotted lines on the x axis at each election year.
+abline(v=c(15706, 15887, 16071, 16252, 16405),lty=2,lwd=1,col="grey45") 
+#custom legend
+legend("bottomright",
+       legend=c("[1] Direct Actions to Defund/ Dismantle",
+                "[6] Tell Obama: Hit Police Pockets", "[7] BYP100-FundBlackFutures", 
+                "[10] Bitcoin Defunds Police State", "[11] Right-wing Conspiracy",
+                "[12] Anti-BLM/BYP", "[14] Reimagine Public Safety"), 
+      col=c("red", "#FFDB00", "green", "aquamarine", "#279DFF", "blue", "magenta"), 
+      lty=1.5, box.lty = 0, cex = 1.4)
+
+dev.off()
+```
+
+Table of highest engagement tweets in dataset:
+Time period 1: Jan 2013-Dec 2014
+```{r}
+#top 15 max engagement defund tweets from 1/13-12/14
+#use defund merge dataset (user data)
+t1_top20 <- defund_merge %>%
+  filter(str_detect(text, "(?i)defund", )) %>%
+  filter(!str_detect(text, "^RT")) %>%
+  filter(date <= as.Date("2014-12-31")) %>%
+  mutate(engagement = public_metrics.retweet_count + public_metrics.reply_count + 
+                          public_metrics.like_count + public_metrics.quote_count) %>%
+  distinct(text, .keep_all = T) %>%
+  select(date, text, engagement, username, description) %>%
+  slice_max(order_by=engagement, n=20)%>%
+  arrange(date)
+
+kableExtra::kable_styling(knitr::kable(t1_top20, caption="Most Engaged Tweets about defunding police (2013-2014", escape = FALSE))
+write.table(t1_top20, file = "tables/top20_2013-14_table.txt", sep = "╡", quote = FALSE, row.names = F)
+
+
+#test pre-october 2015
+#use defund merge dataset (user data)
+test <- defund_merge %>%
+  filter(str_detect(text, "(?i)defund", )) %>%
+  filter(!str_detect(text, "^RT")) %>%
+  filter(date <= as.Date("2015-10-01")) %>%
+  mutate(engagement = public_metrics.retweet_count + public_metrics.reply_count + 
+                          public_metrics.like_count + public_metrics.quote_count) %>%
+  distinct(text, .keep_all = T) %>%
+  select(date, text, engagement, username, description) %>%
+  slice_max(order_by=engagement, n=40)%>%
+  arrange(date)
+
+```
+
+
+
+
+### 2015-2016
+
+Graph of selected 12 topics for 2015-2016
+```{r}
+png(filename="figures/defundtopics_2015-16.png", width = 800, height = 800)
+#remove box around plot, make line weight thicker
+par(bty="n",lwd=2) 
+
+#plot!
+plot(prep_may20, "month", method = "continuous", topics = c(1, 6, 7, 10, 11, 12, 14), 
+     model = defund_model_15, 
+     printlegend = F, xaxt="n", xlab = "Time (Jan 2015-Dec 2016)",
+     xlim = c(16436, 17166),
+     main = "'Defund Police' Tweets: Select Topic Proportions 2015-2016", 
+     cex.lab = 1.5, cex.axis = 1.2, cex.main = 2) #increase font sizes
+#custom axis
+axis(1, at = c(16436, 16671, 16801, 16983, 17136), # Jan# + 181 = Jul#
+     labels = c("Jan 2015", "July 2015", "Jan 2016", "July 2016", "Dec 2016"),
+     cex.axis = 1.5)
+# Put dotted lines on the x axis at each election year.
+abline(v=c(16436, 16671, 16801, 16982, 17136),lty=2,lwd=1,col="grey45") 
+#custom legend
+legend("bottomright",
+       legend=c("[1] Direct Actions to Defund/ Dismantle",
+                "[6] Tell Obama: Hit Police Pockets", "[7] BYP100-FundBlackFutures", 
+                "[10] Bitcoin Defunds Police State", "[11] Right-wing Conspiracy",
+                "[12] Anti-BLM/BYP", "[14] Reimagine Public Safety"), 
+      col=c("red", "#FFDB00", "green", "aquamarine", "#279DFF", "blue", "magenta"), 
+      lty=1.5, box.lty = 0, cex = 1.4)
+
+dev.off()
+```
+
+Time period 2: Oct 2015-Oct 2016
+```{r}
+#top 20 max engagement defund tweets from 10/15-10/16
+#use defund merge dataset (user data)
+t2_top20 <- defund_merge %>%
+  filter(str_detect(text, "(?i)defund", )) %>%
+  filter(!str_detect(text, "^RT")) %>%
+  filter(date >= as.Date("2015-01-01") & date <= as.Date("2016-12-31")) %>%
+  mutate(engagement = public_metrics.retweet_count + public_metrics.reply_count + 
+                          public_metrics.like_count + public_metrics.quote_count) %>%
+  distinct(text, .keep_all = T) %>%
+  select(date, text, engagement, username, description) %>%
+  slice_max(order_by=engagement, n=20)%>%
+  arrange(date)
+
+kableExtra::kable_styling(knitr::kable(t2_top20, caption="Most Engaged Tweets about defunding police (2015-2016", escape = FALSE))
+write.table(t2_top20, file = "tables/top20_2015-16_table.txt", sep = "╡", quote = FALSE, row.names = F)
+
+
+```
+
+### 2017-2020
+Graph of selected topics for 2017-2020
+```{r}
+png(filename="figures/defundtopics_2017-20.png", width = 800, height = 800)
+#remove box around plot, make line weight thicker
+par(bty="n",lwd=2) 
+
+#plot!
+plot(prep_may20, "month", method = "continuous", topics = c(1, 6, 7, 10, 11, 12, 14), 
+     model = defund_model_15, 
+     printlegend = F, xaxt="n", xlab = "Time (Jan 2017-May 2020)",
+     xlim = c(17167,18408),
+     main = "'Defund Police' Tweets: Select Topic Proportions 2017-2020", 
+     cex.lab = 1.5, cex.axis = 1.2, cex.main = 2) #increase font sizes
+#custom axis
+axis(1, at = c(17167, 17532, 17897, 18262), # Jan# + 181 = Jul#
+     labels = c("Jan 2017", "Jan 2018", "Jan 2019", "Jan 2020"),
+     cex.axis = 1.5)
+# Put dotted lines on the x axis at each election year.
+abline(v=c(17167, 17532, 17897, 18262),lty=2,lwd=1,col="grey45") 
+#custom legend
+legend("bottomright",
+       legend=c("[1] Direct Actions to Defund/ Dismantle",
+                "[6] Tell Obama: Hit Police Pockets", "[7] BYP100-FundBlackFutures", 
+                "[10] Bitcoin Defunds Police State", "[11] Right-wing Conspiracy",
+                "[12] Anti-BLM/BYP", "[14] Reimagine Public Safety"), 
+      col=c("red", "#FFDB00", "green", "aquamarine", "#279DFF", "blue", "magenta"), 
+      lty=1.5, box.lty = 0, cex = 1.4)
+
+dev.off()
+```
+
+Time period 3: Jan 2017-May 2020
+```{r}
+#top 20 max engagement defund tweets from 1/17-5/25/20
+#use defund merge dataset (user data)
+t3_top20 <- defund_merge %>%
+  filter(str_detect(text, "(?i)defund", )) %>%
+  filter(!str_detect(text, "^RT")) %>%
+  filter(date >= as.Date("2017-01-01") & date <= as.Date("2020-05-25")) %>%
+  mutate(engagement = public_metrics.retweet_count + public_metrics.reply_count + 
+                          public_metrics.like_count + public_metrics.quote_count) %>%
+  distinct(text, .keep_all = T) %>%
+  select(date, text, engagement, username, description) %>%
+  slice_max(order_by=engagement, n=20)%>%
+  arrange(date)
+
+kableExtra::kable_styling(knitr::kable(t3_top20, caption="Most Engaged Tweets about defunding police (2017-2020", escape = FALSE))
+write.table(t3_top20, file = "tables/top20_2017-20_table.txt", sep = "╡", quote = FALSE, row.names = F)
+
+```
+
+
+Time period 4: May 26 2020-June 4
+```{r}
+library(academictwitteR)
+
+bearer_token <- "AAAAAAAAAAAAAAAAAAAAAA0IYwEAAAAA59YYFaUNEiGx9iUbhAG%2FY%2FY%2Byp0%3D1Y3siHnHXCseUuKnAheOjifcBPskzwETs1juDCtpPXinTTeZZs"
+
+#top 20 max engagement defund tweets
+#merge in user data
+t4_top20_a <- defund1320_nolist %>%
+  filter(date >= as.Date("2020-05-26") & date <= as.Date("2020-06-04")) %>%
+  filter(str_detect(text, "(?i)defund")) %>%
+  filter(!str_detect(text, "^RT")) %>%
+  mutate(engagement = public_metrics.retweet_count + public_metrics.reply_count + 
+                          public_metrics.like_count + public_metrics.quote_count) %>%
+  slice_max(., order_by = engagement, n=21)
+
+t4_top20 <- t4_top20_a$author_id %>%
+  get_user_profile(., bearer_token) %>% #load this data in so we're not actively pulling from twitter
+  merge(., t4_top20_a, by.x = "id", by.y = "author_id", all=F) %>%
+  distinct(username, .keep_all = T) %>%
+  select(date, text, engagement, username, description) %>%
+  arrange(date)
+
+
+kableExtra::kable_styling(knitr::kable(t4_top20, caption="Most Engaged Tweets about defunding police (May 26, 2020-June 4, 2020)", escape = FALSE))
+write.table(t4_top20, file = "tables/top20_mayjune-20_table.txt", sep = "╡", quote = FALSE, row.names = F)
+
+```
